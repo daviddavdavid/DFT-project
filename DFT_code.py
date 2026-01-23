@@ -14,11 +14,12 @@ def run_structure( a, k, vacuum, E_cut, xc, size_xy, structure_name, filepath = 
     # first it selects the structure you want to model, currently we have 3 options
     structure = None
     if structure_name == "graphene": 
-        structure = Graphene(symbol='C', latticeconstant={'a': a, 'c': vacuum}, size=(size_xy[0], size_xy[1], 1))
-    elif structure_name == "silecine":
-        return
-    elif structure_name == "H-bn":
-        return
+        structure = Graphene(symbol="C", latticeconstant={"a": a, "c": vacuum}, size=(size_xy[0], size_xy[1], 1))
+    elif structure_name == "Si":
+        # Works because silicene has the same lattice structure as graphene
+        structure =  Graphene(symbol="Si", latticeconstant={"a": a, "c": vacuum}, size=(size_xy[0], size_xy[1], 1))
+    elif structure_name == "h-BN":
+        # TO-DO: Make a proper h-BN structure
     else:
         raise ValueError("Unsupported structure name and unable to read from file.")
     
@@ -43,4 +44,5 @@ def run_structure( a, k, vacuum, E_cut, xc, size_xy, structure_name, filepath = 
 def generate_file_path(structure_name, xc, k, E_cut, vacuum):
     return f"out/{structure_name}_xc{xc}_k_{k}_Ecut{E_cut}_vac{vacuum}"
 filepath = generate_file_path("graphene", "PBE", 3, 500, 10.0)
-band_gap = run_structure( a=2.46, k = 3, E_cut = 500, vacuum = 10.0, xc = "PBE", size_xy = (1,1), structure_name = "graphene", filepath = filepath)
+band_gap, pot_eng = run_structure( a=2.5, k = 3, E_cut = 500, vacuum = 10.0, xc = "PBE", size_xy = (1,1), structure_name = "graphene", filepath = filepath)
+print("Band gap:", band_gap)
