@@ -69,12 +69,12 @@ def fit_E_vs_V(traj_filename: str) -> float:
     return V0, E0
 
 
-def converge(atom_name, CCdist=1.41, c=10, Ediff=0.08, xc='PBE', ecut=300, E_range = [100, 600, 50], c_list = [1,2,3,4,5,6,7,8,9,10]):
+def converge(atoms, atom_name, CCdist=1.41, c=10, Ediff=0.08, xc='PBE', ecut=300, E_range = [100, 600, 50], c_list = [1,2,3,4,5,6,7,8,9,10]):
     # The lattice constant of graphene is equal to the bond length times sqrt(3)
     a = CCdist * np.sqrt(3)
 
-    # Set up the initial guess for structure and lattice constants for a 1x1x1 supercell of graphene
-    graphene = Graphene('C', size=(1, 1, 1), latticeconstant={'a': a, 'c': c})
+    # To lazy to name it differently
+    graphene = atoms
 
     energies = []
     kpoints=[]
