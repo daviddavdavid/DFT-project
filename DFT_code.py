@@ -228,8 +228,14 @@ def run_structure( a, k, vacuum, E_cut, xc, size_xy, structure_name, filepath = 
     fermi_level = structure.calc.get_fermi_level()
     soc = soc_eigenstates(structure.calc)
     eigenvalues = soc.eigenvalues().ravel() # converts the 2D array to 1D
-    valence_energy = np.max(eigenvalues[eigenvalues < fermi_level]) # selects the highest energy below the fermi level
-    conduction_energy = np.min(eigenvalues[eigenvalues > fermi_level]) # selects the lowest energy above the fermi level
+    valence_energy = None
+    conduction_energy = None
+    for k_point_energy_array in eigenvalues:
+        for energy in k_point_energy_array:
+            if energy < fermi_level and (valence_energy is None or energy > valence_energy):
+                valence_energy = energy
+            elif energy > fermi_level and (conduction_energy is None or energy < conduction_energy):
+                conduction_energy = energy
     band_gap = conduction_energy - valence_energy
     return band_gap, potential_energy
 
