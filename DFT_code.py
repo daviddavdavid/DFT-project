@@ -227,7 +227,7 @@ def run_structure( a, k, vacuum, E_cut, xc, size_xy, structure_name, filepath = 
     potential_energy = structure.get_potential_energy()
     fermi_level = structure.calc.get_fermi_level()
     soc = soc_eigenstates(structure.calc)
-    eigenvalues = soc.eigenvalues().ravel() # converts the 2D array to 1D
+    eigenvalues = soc.eigenvalues() 
     valence_energy = None
     conduction_energy = None
     for k_point_energy_array in eigenvalues:
