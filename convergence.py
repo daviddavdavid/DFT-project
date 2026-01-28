@@ -1,252 +1,259 @@
 import numpy as np
 import os
+import matplotlib.pyplot as plt
+
+from ase import Atoms
+from ase.optimize import BFGS
 from ase.io import Trajectory
 from gpaw import GPAW, PW
-from scipy.optimize import curve_fit
-import matplotlib.pyplot as plt
-from ase import Atoms
 
 os.makedirs("figs", exist_ok=True)
+os.makedirs("out", exist_ok=True)
 
-def parabola(x, a, b, c):
-    """parabola polynomial function"""
-    return a + b * x + c * x ** 2
 
-def fit_E_vs_V(traj_filename: str) -> float:
-    """
-    Fits energy vs. volume data from an ASE trajectory to a parabola (E = aV² + bV + c)
-    and returns the equilibrium volume (V₀) corresponding to the energy minimum.
-    """
-    # Load trajectory file
-    traj_path = traj_filename
-    traj = Trajectory(traj_path)
-
-    volumes = []
-    energies = []
-
-    for atoms in traj:
-        volumes.append(atoms.get_volume())
-        energies.append(atoms.get_potential_energy())
-
-    volumes = np.array(volumes)
-    energies = np.array(energies)
-
-    # Fit data to parabola
-    popt, _ = curve_fit(parabola, volumes, energies, p0=[energies.min(), 1, 1])
-
-    # Extract polynomial coefficients
-    a, b, c = popt
-
-    # Get optimized volume
-    V0 = - b / (2 * c)
-
-    v_fit = np.linspace(min(volumes), max(volumes), 50)
-    e_fit = parabola(v_fit, a, b, c)
-
-    plt.figure()
-    plt.plot(volumes, energies, 'o', label="DFT data")
-    plt.plot(v_fit, e_fit, '-', label="Parabolic fit")
-    plt.xlabel("Volume (Å³)")
-    plt.ylabel("Total energy (eV)")
-    plt.title("Energy vs Volume")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(f"figs/E_vs_V.png")
-    plt.show()
-
-    # Print fitted parameters
-    print(f"parabola fit parameters:")
-    print(f"a = {a:.3f}, b = {b:.3f}, c = {c:.3f}, V0 = {V0:.3f} Å³")
-
-    E0 = e_fit.min()
-
-    return V0, E0
-
+# --------------------------------------------------
+# Utility: find first converged value
+# --------------------------------------------------
 def find_converged_value(values, energies, Ediff):
-    delta_energies = []
     for i in range(1, len(energies)):
-        delta_energies.append(abs(energies[i] - energies[i - 1]))
-
-    values_edit = values.copy()
-    values_edit.pop(0)
-
-    for i in range(len(delta_energies)):
-        if delta_energies[i] <= Ediff:
-            return values_edit[i]
-
-    return values_edit[-1]
+        if abs(energies[i] - energies[i - 1]) <= Ediff:
+            return values[i]
+    return values[-1]
 
 
-def kpoint_convergence(atoms, atom_name, ecut, xc, Ediff):
-    energies = []
-    kpoints = []
-
-    for k in range(2, 12, 1):
-        atoms_copy = atoms.copy()
-        atoms_copy.calc = GPAW(
-            mode=PW(ecut),
-            xc=xc,
-            kpts=(k, k, 1),
-            txt=f'out/{atom_name}_xc{xc}_ecut{ecut}_k{k}.txt',
-            spinpol=True
-        )
-        energies.append(atoms_copy.get_potential_energy())
-        kpoints.append(k)
-
-    plt.figure()
-    plt.plot(kpoints, energies, marker='o')
-    plt.xlabel("k-point mesh")
-    plt.ylabel("Total energy (eV)")
-    plt.title(f"{atom_name} k-point convergence")
-    plt.tight_layout()
-    plt.savefig(f"figs/{atom_name}_kpoint_convergence.png")
-    plt.show()
-
-    k_conv = find_converged_value(kpoints, energies, Ediff)
-    print(k_conv)
-    return k_conv
-
-
-def ecut_convergence(atoms, atom_name, k, xc, Ediff, E_range):
-    energies = []
-    encuts = []
-
-    E_start, E_end, E_step = E_range
-
-    for ecut in range(E_start, E_end, E_step):
-        atoms_copy = atoms.copy()
-        atoms_copy.calc = GPAW(
-            mode=PW(ecut),
-            xc=xc,
-            kpts=(k, k, 1),
-            txt=f'out/{atom_name}_xc{xc}_ecut{ecut}_k{k}.txt',
-            spinpol=True
-        )
-        energies.append(atoms_copy.get_potential_energy())
-        encuts.append(ecut)
-
-    plt.figure()
-    plt.plot(encuts, energies, marker='o')
-    plt.xlabel("Plane-wave cutoff (eV)")
-    plt.ylabel("Total energy (eV)")
-    plt.title(f"{atom_name} ecut convergence")
-    plt.tight_layout()
-    plt.savefig(f"figs/{atom_name}_ecut_convergence.png")
-    plt.show()
-
-    ecut_conv = find_converged_value(encuts, energies, Ediff)
-    print(ecut_conv)
-    return ecut_conv
-
-def vacuum_convergence(atoms, atom_name, k, ecut, xc, Ediff, c_list):
+# --------------------------------------------------
+# Vacuum convergence (energy per atom)
+# --------------------------------------------------
+def vacuum_convergence(atoms, atom_name, k, ecut, xc, c_list, Ediff):
     energies = []
 
     for c in c_list:
-        atoms_copy = atoms.copy()
-        cell = atoms_copy.cell.copy()
+        atoms_c = atoms.copy()
+        cell = atoms_c.cell.copy()
         cell[2, 2] = c
-        atoms_copy.set_cell(cell, scale_atoms=False)
+        atoms_c.set_cell(cell, scale_atoms=False)
 
-        atoms_copy.calc = GPAW(
+        atoms_c.calc = GPAW(
             mode=PW(ecut),
             xc=xc,
-            kpts=(k, k, 1),
-            txt=f'out/{atom_name}_xc{xc}_ecut{ecut}_k{k}.txt',
-            spinpol=True
+            kpts={'size': (k, k, 1), 'gamma': True},
+            txt=f'out/{atom_name}_vac_c{c}.txt'
         )
-        energies.append(atoms_copy.get_potential_energy())
+
+        E = atoms_c.get_potential_energy() / len(atoms_c)
+        energies.append(E)
 
     plt.figure()
-    plt.plot(c_list, energies, marker='o')
-    plt.xlabel("Vacuum size (Å)")
-    plt.ylabel("Total energy (eV)")
-    plt.title(f"{atom_name} vacuum convergence")
+    plt.plot(c_list, energies, 'o-')
+    plt.xlabel("Vacuum height c (Å)")
+    plt.ylabel("Energy per atom (eV)")
+    plt.title("Vacuum convergence")
     plt.tight_layout()
-    plt.savefig(f"figs/{atom_name}_vacuum_convergence.png")
+    plt.savefig("figs/vacuum_convergence.png")
     plt.show()
 
-    c_conv = find_converged_value(c_list, energies, Ediff)
-    print(c_conv)
-    return c_conv
+    return find_converged_value(c_list, energies, Ediff)
 
-def volume_fit(atoms, atom_name, k, ecut, xc):
-    traj_path = os.path.join('out', f'{atom_name}.traj')
-    traj = Trajectory(traj_path, 'w')
 
+# --------------------------------------------------
+# k-point convergence (Γ-centered)
+# --------------------------------------------------
+def kpoint_convergence(atoms, atom_name, ecut, xc, k_list, Ediff):
     energies = []
-    scales = np.arange(0.98, 1.02, 0.01)
 
-    for s in scales:
-        atoms_scaled = atoms.copy()
-        atoms_scaled.set_cell(atoms.cell * s, scale_atoms=True)
-
-        atoms_scaled.calc = GPAW(
+    for k in k_list:
+        atoms_k = atoms.copy()
+        atoms_k.calc = GPAW(
             mode=PW(ecut),
             xc=xc,
-            kpts=(k, k, 1),
-            txt=f'out/{atom_name}_xc{xc}_ecut{ecut}_k{k}.txt',
-            spinpol=True
+            kpts={'size': (k, k, 1), 'gamma': True},
+            txt=f'out/{atom_name}_k{k}.txt'
         )
 
-        energies.append(atoms_scaled.get_potential_energy())
-        traj.write(atoms_scaled)
+        E = atoms_k.get_potential_energy() / len(atoms_k)
+        energies.append(E)
 
-    if os.path.exists(traj_path):
-        V0, E0 = fit_E_vs_V(traj_path)
-        return V0, E0
+    plt.figure()
+    plt.plot(k_list, energies, 'o-')
+    plt.xlabel("k-point grid (k × k × 1)")
+    plt.ylabel("Energy per atom (eV)")
+    plt.title("k-point convergence")
+    plt.tight_layout()
+    plt.savefig("figs/kpoint_convergence.png")
+    plt.show()
 
-    return None, None
+    return find_converged_value(k_list, energies, Ediff)
 
-def converge(atoms,
-             atom_name,
-             Ediff=0.08,
-             xc='PBE',
-             ecut=300,
-             E_range=[100, 600, 50],
-             c_list=[1,2,3,4,5,6,7,8,9,10]):
 
-    atoms_base = atoms.copy()
+# --------------------------------------------------
+# Plane-wave cutoff convergence
+# --------------------------------------------------
+def ecut_convergence(atoms, atom_name, k, xc, ecut_list, Ediff):
+    energies = []
 
-    # k-point convergence
-    k = kpoint_convergence(atoms_base, atom_name, ecut, xc, Ediff)
+    for ecut in ecut_list:
+        atoms_e = atoms.copy()
+        atoms_e.calc = GPAW(
+            mode=PW(ecut),
+            xc=xc,
+            kpts={'size': (k, k, 1), 'gamma': True},
+            txt=f'out/{atom_name}_ecut{ecut}.txt'
+        )
 
-    # ecut convergence
-    ecut = ecut_convergence(atoms_base, atom_name, k, xc, Ediff, E_range)
+        E = atoms_e.get_potential_energy() / len(atoms_e)
+        energies.append(E)
 
-    # vacuum convergence
-    c = vacuum_convergence(atoms_base, atom_name, k, ecut, xc, Ediff, c_list)
+    plt.figure()
+    plt.plot(ecut_list, energies, 'o-')
+    plt.xlabel("Plane-wave cutoff (eV)")
+    plt.ylabel("Energy per atom (eV)")
+    plt.title("ecut convergence")
+    plt.tight_layout()
+    plt.savefig("figs/ecut_convergence.png")
+    plt.show()
 
-    # volume fit
-    V0, E0 = volume_fit(atoms_base, atom_name, k, ecut, xc)
+    return find_converged_value(ecut_list, energies, Ediff)
 
-    A0 = V0 / c
-    a = np.sqrt(2 * A0 / np.sqrt(3))
-    # CC = a / np.sqrt(3)
-    print(a)
-    # print(CC)
 
-    return k, ecut, a, c, E0
+# --------------------------------------------------
+# Relax atomic positions (buckling)
+# --------------------------------------------------
+def relax_buckling(atoms, k, ecut, xc, fmax=0.01):
+    atoms_r = atoms.copy()
+    atoms_r.calc = GPAW(
+        mode=PW(ecut),
+        xc=xc,
+        kpts={'size': (k, k, 1), 'gamma': True},
+        txt="out/relax_buckling.txt"
+    )
 
-a = 4.05
-c = 10.99
-z_dist_a = 0.16988097777 * a
-z_dist = z_dist_a / c
+    opt = BFGS(atoms_r, trajectory="out/buckling.traj")
+    opt.run(fmax=fmax)
+
+    return atoms_r
+
+
+# --------------------------------------------------
+# In-plane lattice constant optimization (energy scan)
+# --------------------------------------------------
+def optimize_lattice_constant(atoms, k, ecut, xc, a_factors):
+    energies = []
+    a_values = []
+
+    for f in a_factors:
+        atoms_a = atoms.copy()
+        cell = atoms_a.cell.copy()
+        cell[0, 0] *= f
+        cell[1, 1] *= f
+        atoms_a.set_cell(cell, scale_atoms=True)
+
+        atoms_a.calc = GPAW(
+            mode=PW(ecut),
+            xc=xc,
+            kpts={'size': (k, k, 1), 'gamma': True},
+            txt=f"out/a_scan_{f:.3f}.txt"
+        )
+
+        E = atoms_a.get_potential_energy()
+        energies.append(E)
+        a_values.append(cell[0, 0])
+
+    i_min = np.argmin(energies)
+    return a_values[i_min], energies[i_min]
+
+
+# --------------------------------------------------
+# Master convergence function
+# --------------------------------------------------
+def converge_silicene(
+    atoms,
+    atom_name="Si",
+    xc="PBE",
+    Ediff=1e-3,
+    k_list=range(6, 16, 2),
+    ecut_list=range(300, 600, 50),
+    c_list=range(12, 26, 2)
+):
+
+    print("→ Vacuum convergence")
+    c_opt = vacuum_convergence(atoms, atom_name, k=6, ecut=400, xc=xc,
+                               c_list=c_list, Ediff=Ediff)
+
+    atoms.cell[2, 2] = c_opt
+
+    print("→ k-point convergence")
+    k_opt = kpoint_convergence(atoms, atom_name, ecut=400, xc=xc,
+                               k_list=k_list, Ediff=Ediff)
+
+    print("→ ecut convergence")
+    ecut_opt = ecut_convergence(atoms, atom_name, k_opt, xc,
+                                ecut_list, Ediff)
+
+    print("→ Relaxing buckling")
+    atoms_relaxed = relax_buckling(atoms, k_opt, ecut_opt, xc)
+
+    print("→ Optimizing lattice constant a")
+    a_opt, E0 = optimize_lattice_constant(
+        atoms_relaxed, k_opt, ecut_opt, xc,
+        a_factors=np.linspace(0.97, 1.03, 9)
+    )
+
+    return {
+        "k": k_opt,
+        "ecut": ecut_opt,
+        "c": c_opt,
+        "a": a_opt,
+        "E0": E0
+    }
+
+
+# --------------------------------------------------
+# Initial silicene structure
+# --------------------------------------------------
+a0 = 3.86       # initial guess
+c0 = 18.0       # large vacuum
+buckling = 0.44 # Å (initial guess)
 
 silicene = Atoms(
     'Si2',
-    cell=[a, a, c, 90, 90, 120],
-    scaled_positions=[(0, 0, 0), (1/3, 2/3, z_dist)],
+    cell=[a0, a0, c0, 90, 90, 120],
+    positions=[
+        (0.0, 0.0, c0 / 2 - buckling / 2),
+        (a0 / 3, 2 * a0 / 3, c0 / 2 + buckling / 2)
+    ],
     pbc=[True, True, False]
 )
 
-k, ecut, a_opt, c_opt, E0 = converge(
-    silicene,
-    atom_name="Si",
-    Ediff=0.08,
-    xc="PBE"
-)
+results = converge_silicene(silicene)
+print(results)
 
 # Results: k = 5, ecut = 200, c = 8, a = 4.062544476939418
 
 # a = -7.095, b = -0.043, c = 0.000, V0 = 114.345 Å³
 # 2.3455111473558 CC?
+
+
+# → Vacuum convergence
+# → k-point convergence
+# → ecut convergence
+# → Relaxing buckling
+#       Step     Time          Energy          fmax
+# BFGS:    0 10:41:25       34.942221      137.325991
+# BFGS:    1 10:42:51        1.582530       41.708869
+# BFGS:    2 10:44:07       -3.879991       21.427051
+# BFGS:    3 10:45:43       -6.742202        8.614357
+# BFGS:    4 10:46:39       -7.561097        3.973742
+# BFGS:    5 10:47:30       -8.136620        3.554758
+# BFGS:    6 10:48:40       -9.064657        3.089436
+# BFGS:    7 10:49:52       -9.127238        1.900088
+# BFGS:    8 10:51:01       -9.263605        1.985926
+# BFGS:    9 10:51:38       -9.305953        1.827343
+# BFGS:   10 10:52:23       -9.434621        1.119953
+# BFGS:   11 10:52:54       -9.470824        0.604775
+# BFGS:   12 10:53:26       -9.484560        0.511869
+# BFGS:   13 10:53:54       -9.499929        0.446647
+# BFGS:   14 10:54:26       -9.515465        0.216692
+# BFGS:   15 10:54:56       -9.518316        0.023620
+# BFGS:   16 10:55:17       -9.518369        0.002184
+# → Optimizing lattice constant a
+# {'k': 14, 'ecut': 450, 'c': 14, 'a': np.float64(3.86), 'E0': np.float64(-9.516275091914718)}
