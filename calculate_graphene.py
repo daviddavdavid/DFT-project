@@ -27,7 +27,7 @@ ecut = 500
 a = 2.481
 c = 9
 xc = "PBE"
-band_gap, _ = DFT_code.run_structure(a, k, c, ecut, xc, (1, 1), "graphene")
+band_gap, _ = DFT_code.run_structure(a, k, c, ecut, xc, (1, 1), 2, "graphene")
 print(f"The band gap is {band_gap}")
 
 
@@ -35,14 +35,14 @@ print(f"The band gap is {band_gap}")
 # Part 2 : Spectrum calculation
 # DF: dielectric function object
 # Ground state gpw file (with wavefunction) as input
-df = DielectricFunction(
+df_graphene = DielectricFunction(
     calc="graphene.gpw",
     frequencies={"type": "nonlinear",
                  "domega0": 0.05,
                  "omegamax": 100},  # using nonlinear frequency grid
     rate="eta")
 # By default, a file called "df.csv" is generated
-df.get_dielectric_function()
+df_graphene.get_dielectric_function()
 
 rc("figure", figsize=(4.0, 4.0), dpi=800)
 
