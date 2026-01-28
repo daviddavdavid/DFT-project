@@ -10,20 +10,12 @@ from gpaw import GPAW, PW
 os.makedirs("figs", exist_ok=True)
 os.makedirs("out", exist_ok=True)
 
-
-# --------------------------------------------------
-# Utility: find first converged value
-# --------------------------------------------------
 def find_converged_value(values, energies, Ediff):
     for i in range(1, len(energies)):
         if abs(energies[i] - energies[i - 1]) <= Ediff:
             return values[i]
     return values[-1]
 
-
-# --------------------------------------------------
-# Vacuum convergence (energy per atom)
-# --------------------------------------------------
 def vacuum_convergence(atoms, atom_name, k, ecut, xc, c_list, Ediff):
     energies = []
 
@@ -54,10 +46,6 @@ def vacuum_convergence(atoms, atom_name, k, ecut, xc, c_list, Ediff):
 
     return find_converged_value(c_list, energies, Ediff)
 
-
-# --------------------------------------------------
-# k-point convergence (Γ-centered)
-# --------------------------------------------------
 def kpoint_convergence(atoms, atom_name, ecut, xc, k_list, Ediff):
     energies = []
 
@@ -84,10 +72,6 @@ def kpoint_convergence(atoms, atom_name, ecut, xc, k_list, Ediff):
 
     return find_converged_value(k_list, energies, Ediff)
 
-
-# --------------------------------------------------
-# Plane-wave cutoff convergence
-# --------------------------------------------------
 def ecut_convergence(atoms, atom_name, k, xc, ecut_list, Ediff):
     energies = []
 
@@ -114,10 +98,6 @@ def ecut_convergence(atoms, atom_name, k, xc, ecut_list, Ediff):
 
     return find_converged_value(ecut_list, energies, Ediff)
 
-
-# --------------------------------------------------
-# Relax atomic positions (buckling)
-# --------------------------------------------------
 def relax_buckling(atoms, k, ecut, xc, fmax=0.01):
     atoms_r = atoms.copy()
     atoms_r.calc = GPAW(
@@ -132,10 +112,6 @@ def relax_buckling(atoms, k, ecut, xc, fmax=0.01):
 
     return atoms_r
 
-
-# --------------------------------------------------
-# In-plane lattice constant optimization (energy scan)
-# --------------------------------------------------
 def optimize_lattice_constant(atoms, k, ecut, xc, a_factors):
     energies = []
     a_values = []
@@ -161,10 +137,6 @@ def optimize_lattice_constant(atoms, k, ecut, xc, a_factors):
     i_min = np.argmin(energies)
     return a_values[i_min], energies[i_min]
 
-
-# --------------------------------------------------
-# Master convergence function
-# --------------------------------------------------
 def converge_silicene(
     atoms,
     atom_name="Si",
@@ -175,24 +147,24 @@ def converge_silicene(
     c_list=range(12, 26, 2)
 ):
 
-    print("→ Vacuum convergence")
+    print("Vacuum convergence")
     c_opt = vacuum_convergence(atoms, atom_name, k=6, ecut=400, xc=xc,
                                c_list=c_list, Ediff=Ediff)
 
     atoms.cell[2, 2] = c_opt
 
-    print("→ k-point convergence")
+    print("k-point convergence")
     k_opt = kpoint_convergence(atoms, atom_name, ecut=400, xc=xc,
                                k_list=k_list, Ediff=Ediff)
 
-    print("→ ecut convergence")
+    print("ecut convergence")
     ecut_opt = ecut_convergence(atoms, atom_name, k_opt, xc,
                                 ecut_list, Ediff)
 
-    print("→ Relaxing buckling")
+    print("Relaxing buckling")
     atoms_relaxed = relax_buckling(atoms, k_opt, ecut_opt, xc)
 
-    print("→ Optimizing lattice constant a")
+    print("Optimizing lattice constant a")
     a_opt, E0 = optimize_lattice_constant(
         atoms_relaxed, k_opt, ecut_opt, xc,
         a_factors=np.linspace(0.97, 1.03, 9)
@@ -207,12 +179,9 @@ def converge_silicene(
     }
 
 
-# --------------------------------------------------
-# Initial silicene structure
-# --------------------------------------------------
-a0 = 3.86       # initial guess
-c0 = 18.0       # large vacuum
-buckling = 0.44 # Å (initial guess)
+a0 = 3.86 
+c0 = 18.0  
+buckling = 0.44 
 
 silicene = Atoms(
     'Si2',
@@ -232,11 +201,6 @@ print(results)
 # a = -7.095, b = -0.043, c = 0.000, V0 = 114.345 Å³
 # 2.3455111473558 CC?
 
-
-# → Vacuum convergence
-# → k-point convergence
-# → ecut convergence
-# → Relaxing buckling
 #       Step     Time          Energy          fmax
 # BFGS:    0 10:41:25       34.942221      137.325991
 # BFGS:    1 10:42:51        1.582530       41.708869
@@ -255,5 +219,4 @@ print(results)
 # BFGS:   14 10:54:26       -9.515465        0.216692
 # BFGS:   15 10:54:56       -9.518316        0.023620
 # BFGS:   16 10:55:17       -9.518369        0.002184
-# → Optimizing lattice constant a
 # {'k': 14, 'ecut': 450, 'c': 14, 'a': np.float64(3.86), 'E0': np.float64(-9.516275091914718)}
